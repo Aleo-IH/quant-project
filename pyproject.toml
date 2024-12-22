@@ -12,5 +12,6 @@ dependencies = [
     "pandas>=2.2.3",
     "python-binance>=1.0.24",
     "python-dotenv>=1.0.1",
+    "seaborn>=0.13.2",
     "typing>=3.10.0.0",
 ]

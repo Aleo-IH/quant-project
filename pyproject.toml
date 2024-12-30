@@ -5,12 +5,12 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "binance-connector>=3.11.0",
     "datetime>=5.5",
     "ipykernel>=6.29.5",
     "jupyterlab>=4.3.1",
     "logging>=0.4.9.6",
     "pandas>=2.2.3",
-    "python-binance>=1.0.24",
     "python-dotenv>=1.0.1",
     "seaborn>=0.13.2",
     "typing>=3.10.0.0",

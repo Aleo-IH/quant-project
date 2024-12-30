@@ -3,11 +3,18 @@ import pandas as pd
 from typing import Union, List, Optional
 from datetime import datetime
 from dateutil import parser
-from binance.client import Client
-from binance.enums import *
-from binance.exceptions import BinanceAPIException, BinanceOrderException
 
-# Configuration d'un logger simple
+# Binance Connector
+from binance.connector.spot import Spot as Client
+from binance.error import ClientError, ServerError
+
+# If you still want to keep your old enums as constants, define them here:
+TIME_IN_FORCE_GTC = "GTC"
+ORDER_TYPE_MARKET = "MARKET"
+ORDER_TYPE_LIMIT = "LIMIT"
+ORDER_TYPE_STOP_LOSS_LIMIT = "STOP_LOSS_LIMIT"
+
+# Configure a simple logger
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 stream_handler = logging.StreamHandler()
@@ -19,52 +26,42 @@ logger.addHandler(stream_handler)
 
 class BinanceTrader:
     """
-    Une classe pour interagir avec l'API Binance (testnet ou live).
-    Elle inclut la récupération de données de marché, passage d'ordres,
-    gestion du compte, et maintenant la récupération de gros volumes de données
-    entre deux dates.
+    A class to interact with the Binance API (testnet or live),
+    including market data retrieval, order placement, account management,
+    and historical data retrieval between two dates.
     """
 
     def __init__(self, api_key: str, api_secret: str, testnet: bool = True):
         self.testnet = testnet
+
         if self.testnet:
-            self.client = Client(api_key, api_secret, testnet=True)
-            self.client.API_URL = "https://testnet.binance.vision/api"
+            # Note: The testnet base_url for Spot is usually https://testnet.binance.vision
+            self.client = Client(
+                base_url="https://testnet.binance.vision",
+                key=api_key,
+                secret=api_secret
+            )
         else:
-            self.client = Client(api_key, api_secret)
+            # Production environment
+            self.client = Client(key=api_key, secret=api_secret)
 
     def get_candlestick_data(
         self, symbols: Union[str, List[str]], interval: str, limit: int = 500
     ) -> pd.DataFrame:
         """
-        Récupère les données de chandeliers (OHLCV) pour un ou plusieurs symboles.
-        Limité par la requête (maximum 1000).
-
-        Parameters
-        ----------
-        symbols : str ou list of str
-            Le ou les symboles (ex: 'BTCUSDT')
-        interval : str
-            Intervalle de temps pour chaque bougie (ex: '1m', '1h', '1d')
-        limit : int, optional
-            Nombre de bougies à récupérer (max 1000, par défaut 500)
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame contenant les données de chandeliers.
+        Retrieve candlestick (OHLCV) data for one or multiple symbols.
+        Limited per request (maximum 1000).
         """
         try:
             if isinstance(symbols, list):
                 data_frames = []
                 for symbol in symbols:
-                    df = pd.DataFrame(
-                        self.client.get_klines(
-                            symbol=symbol,
-                            interval=interval,
-                            limit=limit,
-                        )
+                    klines = self.client.klines(
+                        symbol=symbol,
+                        interval=interval,
+                        limit=limit,
                     )
+                    df = pd.DataFrame(klines)
                     df.columns = [
                         "Open Time",
                         "Open",
@@ -80,15 +77,18 @@ class BinanceTrader:
                         "Ignore",
                     ]
                     data_frames.append((symbol, df))
+
                 return pd.concat(
-                    [df for _, df in data_frames], keys=[sym for sym, _ in data_frames]
+                    [df for _, df in data_frames],
+                    keys=[sym for sym, _ in data_frames]
                 )
             else:
-                df = pd.DataFrame(
-                    self.client.get_klines(
-                        symbol=symbols, interval=interval, limit=limit
-                    )
+                klines = self.client.klines(
+                    symbol=symbols,
+                    interval=interval,
+                    limit=limit
                 )
+                df = pd.DataFrame(klines)
                 df.columns = [
                     "Open Time",
                     "Open",
@@ -104,10 +104,8 @@ class BinanceTrader:
                     "Ignore",
                 ]
                 return df
-        except BinanceAPIException as e:
-            logger.error(
-                f"Erreur lors de la récupération des données de chandeliers: {e}"
-            )
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error retrieving candlestick data: {e}")
             return pd.DataFrame()
 
     def get_candlestick_data_range(
@@ -119,29 +117,9 @@ class BinanceTrader:
         limit: int = 1000,
     ) -> pd.DataFrame:
         """
-        Récupère les données de chandeliers (OHLCV) pour un symbole entre deux dates spécifiées,
-        en bouclant pour dépasser la limite autorisée par requête.
-
-        Parameters
-        ----------
-        symbol : str
-            Le symbole (ex: 'BTCUSDT').
-        interval : str
-            Intervalle de temps pour chaque bougie (ex: '1m', '1h', '1d').
-        start_dt : str ou datetime
-            Date/heure de début (ex: '2020-01-01' ou datetime(2020,1,1)).
-        end_dt : str ou datetime
-            Date/heure de fin (ex: '2020-02-01' ou datetime(2020,2,1)).
-        limit : int, optional
-            Nombre de bougies par requête (max 1000, par défaut 1000).
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame contenant toutes les bougies entre start_dt et end_dt.
+        Retrieve candlestick (OHLCV) data for a symbol between two specified dates,
+        looping to exceed the per-request limit if needed.
         """
-
-        # Conversion des paramètres start_dt et end_dt en datetime si besoin
         if isinstance(start_dt, str):
             start_dt = parser.parse(start_dt)
         if isinstance(end_dt, str):
@@ -154,6 +132,7 @@ class BinanceTrader:
         current_start = start_ts
 
         try:
+            # Handling multiple symbols
             if isinstance(symbol, list):
                 all_symbol_frames = []
                 for sym in symbol:
@@ -161,7 +140,7 @@ class BinanceTrader:
                     current_start_sym = current_start
 
                     while True:
-                        klines = self.client.get_klines(
+                        klines = self.client.klines(
                             symbol=sym,
                             interval=interval,
                             limit=limit,
@@ -215,13 +194,19 @@ class BinanceTrader:
                     )
                     df = df.astype(float)
                     df = df.swaplevel(0, 1).sort_index()
-                    df.name = f"{' | '.join(symbol)} ; {interval} tf ; {df.index.get_level_values('Open Time').min()} to {df.index.get_level_values('Open Time').max()}"
+                    df.name = (
+                        f"{' | '.join(symbol)} ; {interval} tf ; "
+                        f"{df.index.get_level_values('Open Time').min()} to "
+                        f"{df.index.get_level_values('Open Time').max()}"
+                    )
                     return df
                 else:
                     return pd.DataFrame()
+
+            # Single symbol
             else:
                 while True:
-                    klines = self.client.get_klines(
+                    klines = self.client.klines(
                         symbol=symbol,
                         interval=interval,
                         limit=limit,
@@ -267,165 +252,110 @@ class BinanceTrader:
                 else:
                     return pd.DataFrame()
 
-        except BinanceAPIException as e:
-            logger.error(
-                f"Erreur lors de la récupération des données de chandeliers sur plage : {e}"
-            )
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error retrieving range candlestick data: {e}")
             return pd.DataFrame()
 
     def get_order_book(
         self, symbols: Union[str, List[str]], limit: int = 100
     ) -> pd.DataFrame:
         """
-        Récupère le carnet d'ordres (order book) pour un ou plusieurs symboles.
-
-        Parameters
-        ----------
-        symbols : str ou list of str
-            Le ou les symboles (ex: 'BTCUSDT')
-        limit : int, optional
-            Nombre d'ordres à récupérer (5, 10, 100), 100 par défaut
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame avec les données du carnet d'ordres.
+        Retrieve the order book (depth) for one or multiple symbols.
         """
         try:
             if isinstance(symbols, list):
                 data_frames = []
                 for symbol in symbols:
-                    ob = self.client.get_order_book(symbol=symbol, limit=limit)
+                    ob = self.client.depth(symbol=symbol, limit=limit)
                     df = pd.DataFrame(ob)
                     data_frames.append((symbol, df))
                 return pd.concat(
-                    [df for _, df in data_frames], keys=[sym for sym, _ in data_frames]
+                    [df for _, df in data_frames],
+                    keys=[sym for sym, _ in data_frames]
                 )
-
             else:
-                return pd.DataFrame(
-                    self.client.get_order_book(symbol=symbols, limit=limit)
-                )
-        except BinanceAPIException as e:
-            logger.error(f"Erreur lors de la récupération du carnet d'ordres: {e}")
+                ob = self.client.depth(symbol=symbols, limit=limit)
+                return pd.DataFrame(ob)
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error retrieving order book: {e}")
             return pd.DataFrame()
 
     def get_recent_trades(
         self, symbols: Union[str, List[str]], limit: int = 500
     ) -> pd.DataFrame:
         """
-        Récupère les trades récents pour un ou plusieurs symboles.
-
-        Parameters
-        ----------
-        symbols : str ou list of str
-            Le ou les symboles (ex: 'BTCUSDT')
-        limit : int, optional
-            Nombre de trades à récupérer (max 1000, 500 par défaut)
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame des trades récents.
+        Retrieve recent trades for one or multiple symbols.
         """
         try:
             if isinstance(symbols, list):
                 data_frames = []
                 for symbol in symbols:
-                    df = pd.DataFrame(
-                        self.client.get_recent_trades(symbol=symbol, limit=limit)
-                    )
+                    trades = self.client.trades(symbol=symbol, limit=limit)
+                    df = pd.DataFrame(trades)
                     data_frames.append((symbol, df))
                 return pd.concat(
-                    [df for _, df in data_frames], keys=[sym for sym, _ in data_frames]
+                    [df for _, df in data_frames],
+                    keys=[sym for sym, _ in data_frames]
                 )
             else:
-                return pd.DataFrame(
-                    self.client.get_recent_trades(symbol=symbols, limit=limit)
-                )
-        except BinanceAPIException as e:
-            logger.error(f"Erreur lors de la récupération des trades récents : {e}")
+                trades = self.client.trades(symbol=symbols, limit=limit)
+                return pd.DataFrame(trades)
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error retrieving recent trades: {e}")
             return pd.DataFrame()
 
     def get_historical_trades(
         self, symbols: Union[str, List[str]], limit: int = 500
     ) -> pd.DataFrame:
         """
-        Récupère les trades historiques pour un ou plusieurs symboles.
-
-        Parameters
-        ----------
-        symbols : str ou list of str
-            Le ou les symboles (ex: 'BTCUSDT')
-        limit : int, optional
-            Nombre de trades à récupérer (max 1000, 500 par défaut)
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame des trades historiques.
+        Retrieve historical trades for one or multiple symbols.
         """
         try:
             if isinstance(symbols, list):
                 data_frames = []
                 for symbol in symbols:
-                    df = pd.DataFrame(
-                        self.client.get_historical_trades(symbol=symbol, limit=limit)
-                    )
+                    trades = self.client.historical_trades(symbol=symbol, limit=limit)
+                    df = pd.DataFrame(trades)
                     data_frames.append((symbol, df))
                 return pd.concat(
-                    [df for _, df in data_frames], keys=[sym for sym, _ in data_frames]
+                    [df for _, df in data_frames],
+                    keys=[sym for sym, _ in data_frames]
                 )
             else:
-                return pd.DataFrame(
-                    self.client.get_historical_trades(symbol=symbols, limit=limit)
-                )
-        except BinanceAPIException as e:
-            logger.error(f"Erreur lors de la récupération des trades historiques: {e}")
+                trades = self.client.historical_trades(symbol=symbols, limit=limit)
+                return pd.DataFrame(trades)
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error retrieving historical trades: {e}")
             return pd.DataFrame()
 
     # -------------------------------------------------------------------------
-    # Méthodes pour l'information de compte
+    # Account information methods
     # -------------------------------------------------------------------------
 
     def get_account_info(self) -> dict:
         """
-        Récupère les informations du compte Binance.
-
-        Returns
-        -------
-        dict
-            Dictionnaire contenant les informations du compte.
+        Retrieve Binance account information.
         """
         try:
-            return self.client.get_account()
-        except BinanceAPIException as e:
-            logger.error(
-                f"Erreur lors de la récupération des informations du compte : {e}"
-            )
+            return self.client.account()
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error retrieving account info: {e}")
             return {}
 
     def get_position(
         self, symbols: Union[str, List[str]]
     ) -> Union[pd.DataFrame, dict, None]:
         """
-        Récupère la (les) position(s) pour un ou plusieurs symboles.
-
-        Parameters
-        ----------
-        symbols : str ou list of str
-            Le ou les symboles (ex: 'BTCUSDT')
-
-        Returns
-        -------
-        pd.DataFrame ou dict ou None
-            Positions pour les symboles spécifiés.
+        Retrieve position(s) for one or multiple symbols (spot balances).
         """
         try:
-            positions = self.client.get_account()["balances"]
+            account_info = self.client.account()
+            positions = account_info.get("balances", [])
+
             if isinstance(symbols, list):
                 data_frames = []
                 for symbol in symbols:
+                    # For spot, we usually consider the base asset
                     asset = symbol.replace("USDT", "")
                     pos = next((p for p in positions if p["asset"] == asset), None)
                     if pos:
@@ -433,19 +363,20 @@ class BinanceTrader:
                 if data_frames:
                     return pd.concat(
                         [df for _, df in data_frames],
-                        keys=[sym for sym, _ in data_frames],
+                        keys=[sym for sym, _ in data_frames]
                     )
                 else:
                     return None
             else:
                 asset = symbols.replace("USDT", "")
                 return next((p for p in positions if p["asset"] == asset), None)
-        except BinanceAPIException as e:
-            logger.error(f"Erreur lors de la récupération de la position: {e}")
+
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error retrieving position: {e}")
             return None
 
     # -------------------------------------------------------------------------
-    # Méthodes pour des actions de trading
+    # Trading methods
     # -------------------------------------------------------------------------
 
     def place_order(
@@ -459,29 +390,7 @@ class BinanceTrader:
         time_in_force: str = TIME_IN_FORCE_GTC,
     ) -> Union[dict, None]:
         """
-        Passe un ordre (ou plusieurs) avec les paramètres spécifiés.
-
-        Parameters
-        ----------
-        symbols : str ou list of str
-            Le ou les symboles (ex: 'BTCUSDT')
-        side : str
-            'BUY' ou 'SELL'
-        order_type : str
-            Type d'ordre ('MARKET', 'LIMIT', 'STOP_LOSS_LIMIT', etc.)
-        quantity : float
-            Quantité à acheter ou vendre
-        price : float, optional
-            Prix limite (pour LIMIT ou STOP_LOSS_LIMIT)
-        stop_price : float, optional
-            Prix stop (pour STOP_LOSS_LIMIT)
-        time_in_force : str, optional
-            Validité de l'ordre ('GTC', 'IOC', 'FOK'), GTC par défaut
-
-        Returns
-        -------
-        dict ou None
-            Informations de l'ordre ou None en cas d'erreur.
+        Place an order (or multiple) with the specified parameters.
         """
         try:
             if isinstance(symbols, list):
@@ -507,8 +416,8 @@ class BinanceTrader:
                     stop_price,
                     time_in_force,
                 )
-        except (BinanceAPIException, BinanceOrderException) as e:
-            logger.error(f"Erreur lors du passage de l'ordre : {e}")
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error placing order: {e}")
             return None
 
     def _place_order_helper(
@@ -522,282 +431,246 @@ class BinanceTrader:
         time_in_force: str,
     ) -> dict:
         """
-        Méthode interne pour passer un ordre sur un seul symbole.
+        Internal method to place an order on a single symbol.
         """
+        # The binance-connector uses client.new_order(...) 
+        # with arguments as strings in some cases
         if order_type == ORDER_TYPE_MARKET:
-            return self.client.create_order(
-                symbol=symbol, side=side, type=order_type, quantity=quantity
+            return self.client.new_order(
+                symbol=symbol,
+                side=side,
+                type=order_type,
+                quantity=quantity
             )
         elif order_type == ORDER_TYPE_LIMIT:
-            return self.client.create_order(
+            return self.client.new_order(
                 symbol=symbol,
                 side=side,
                 type=order_type,
                 timeInForce=time_in_force,
                 quantity=quantity,
-                price=str(price),
+                price=str(price)
             )
         elif order_type == ORDER_TYPE_STOP_LOSS_LIMIT:
-            return self.client.create_order(
+            return self.client.new_order(
                 symbol=symbol,
                 side=side,
                 type=order_type,
                 timeInForce=time_in_force,
                 quantity=quantity,
                 price=str(price),
-                stopPrice=str(stop_price),
+                stopPrice=str(stop_price)
             )
         else:
-            raise ValueError("Type d'ordre non supporté.")
+            raise ValueError("Unsupported order type.")
 
     def get_order_status(
         self, symbols: Union[str, List[str]], order_id: int
     ) -> Optional[pd.DataFrame]:
         """
-        Vérifie l'état d'un ordre.
-
-        Parameters
-        ----------
-        symbols : str ou list of str
-            Le ou les symboles (ex: 'BTCUSDT')
-        order_id : int
-            Identifiant de l'ordre
-
-        Returns
-        -------
-        pd.DataFrame ou None
-            DataFrame avec l'état de l'ordre ou None en cas d'erreur.
+        Check the status of an order.
         """
         try:
             if isinstance(symbols, list):
                 data_frames = []
                 for symbol in symbols:
-                    df = pd.DataFrame(
-                        [self.client.get_order(symbol=symbol, orderId=order_id)]
-                    )
+                    order_data = self.client.get_order(symbol=symbol, orderId=order_id)
+                    df = pd.DataFrame([order_data])
                     data_frames.append((symbol, df))
                 return pd.concat(
-                    [df for _, df in data_frames], keys=[sym for sym, _ in data_frames]
+                    [df for _, df in data_frames], 
+                    keys=[sym for sym, _ in data_frames]
                 )
             else:
-                return pd.DataFrame(
-                    [self.client.get_order(symbol=symbols, orderId=order_id)]
-                )
-        except (BinanceAPIException, BinanceOrderException) as e:
-            logger.error(f"Erreur lors de la récupération de l'état de l'ordre : {e}")
+                order_data = self.client.get_order(symbol=symbols, orderId=order_id)
+                return pd.DataFrame([order_data])
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error retrieving order status: {e}")
             return None
 
     def cancel_order(
         self, symbols: Union[str, List[str]], order_id: int
     ) -> Optional[pd.DataFrame]:
         """
-        Annule un ordre.
-
-        Parameters
-        ----------
-        symbols : str ou list of str
-            Le ou les symboles (ex: 'BTCUSDT')
-        order_id : int
-            Identifiant de l'ordre à annuler
-
-        Returns
-        -------
-        pd.DataFrame ou None
-            DataFrame avec les informations de l'annulation ou None en cas d'erreur.
+        Cancel an order.
         """
         try:
             if isinstance(symbols, list):
                 data_frames = []
                 for symbol in symbols:
-                    df = pd.DataFrame(
-                        [self.client.cancel_order(symbol=symbol, orderId=order_id)]
-                    )
+                    cancel_resp = self.client.cancel_order(symbol=symbol, orderId=order_id)
+                    df = pd.DataFrame([cancel_resp])
                     data_frames.append((symbol, df))
                 return pd.concat(
-                    [df for _, df in data_frames], keys=[sym for sym, _ in data_frames]
+                    [df for _, df in data_frames], 
+                    keys=[sym for sym, _ in data_frames]
                 )
             else:
-                return pd.DataFrame(
-                    [self.client.cancel_order(symbol=symbols, orderId=order_id)]
-                )
-        except (BinanceAPIException, BinanceOrderException) as e:
-            logger.error(f"Erreur lors de l'annulation de l'ordre : {e}")
+                cancel_resp = self.client.cancel_order(symbol=symbols, orderId=order_id)
+                return pd.DataFrame([cancel_resp])
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error cancelling order: {e}")
             return None
 
     def get_open_orders(
         self, symbols: Optional[Union[str, List[str]]] = None
     ) -> Optional[pd.DataFrame]:
         """
-        Récupère tous les ordres ouverts pour un ou plusieurs symboles.
-        Si aucun symbole n'est spécifié, récupère tous les ordres ouverts.
-
-        Parameters
-        ----------
-        symbols : str ou list of str, optional
-            Le ou les symboles (ex: 'BTCUSDT'). Si None, récupère tous les ordres ouverts.
-
-        Returns
-        -------
-        pd.DataFrame ou None
-            DataFrame avec les ordres ouverts ou None en cas d'erreur.
+        Retrieve all open orders for one or multiple symbols.
+        If no symbol is specified, retrieve all open orders.
         """
         try:
             if symbols:
                 if isinstance(symbols, list):
                     data_frames = []
                     for symbol in symbols:
-                        df = pd.DataFrame(self.client.get_open_orders(symbol=symbol))
+                        open_orders = self.client.get_open_orders(symbol=symbol)
+                        df = pd.DataFrame(open_orders)
                         data_frames.append((symbol, df))
                     return pd.concat(
                         [df for _, df in data_frames],
-                        keys=[sym for sym, _ in data_frames],
+                        keys=[sym for sym, _ in data_frames]
                     )
                 else:
-                    return pd.DataFrame(self.client.get_open_orders(symbol=symbols))
+                    open_orders = self.client.get_open_orders(symbol=symbols)
+                    return pd.DataFrame(open_orders)
             else:
-                return pd.DataFrame(self.client.get_open_orders())
-        except (BinanceAPIException, BinanceOrderException) as e:
-            logger.error(f"Erreur lors de la récupération des ordres ouverts : {e}")
+                # Retrieve all open orders
+                open_orders = self.client.get_open_orders()
+                return pd.DataFrame(open_orders)
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error retrieving open orders: {e}")
             return None
 
     # -------------------------------------------------------------------------
-    # Méthodes pour des fonctionnalités supplémentaires
+    # Additional features
     # -------------------------------------------------------------------------
 
     def get_all_tickers(self) -> pd.DataFrame:
         """
-        Récupère les prix actuels de tous les tickers.
-
-        Returns
-        -------
-        pd.DataFrame
-            DataFrame avec les prix actuels de tous les tickers.
+        Retrieve current prices for all tickers.
         """
         try:
-            return pd.DataFrame(self.client.get_all_tickers())
-        except BinanceAPIException as e:
-            logger.error(f"Erreur lors de la récupération des tickers : {e}")
+            # binance-connector returns a list of dicts with "symbol" and "price"
+            tickers = self.client.ticker_price()
+            return pd.DataFrame(tickers)
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error retrieving tickers: {e}")
             return pd.DataFrame()
 
     def get_my_trades(
         self, symbols: Union[str, List[str]], limit: int = 50
     ) -> Optional[pd.DataFrame]:
         """
-        Récupère les trades du compte utilisateur pour un ou plusieurs symboles.
-
-        Parameters
-        ----------
-        symbols : str ou list of str
-            Le ou les symboles (ex: 'BTCUSDT')
-        limit : int, optional
-            Nombre de trades à récupérer (max 1000), 50 par défaut
-
-        Returns
-        -------
-        pd.DataFrame ou None
-            DataFrame des trades du compte ou None en cas d'erreur.
+        Retrieve account trades for one or multiple symbols.
         """
         try:
             if isinstance(symbols, list):
                 data_frames = []
                 for symbol in symbols:
-                    df = pd.DataFrame(
-                        self.client.get_my_trades(symbol=symbol, limit=limit)
-                    )
+                    trades = self.client.my_trades(symbol=symbol, limit=limit)
+                    df = pd.DataFrame(trades)
                     data_frames.append((symbol, df))
                 return pd.concat(
-                    [df for _, df in data_frames], keys=[sym for sym, _ in data_frames]
+                    [df for _, df in data_frames],
+                    keys=[sym for sym, _ in data_frames]
                 )
             else:
-                return pd.DataFrame(
-                    self.client.get_my_trades(symbol=symbols, limit=limit)
-                )
-        except (BinanceAPIException, BinanceOrderException) as e:
-            logger.error(f"Erreur lors de la récupération des trades du compte : {e}")
+                trades = self.client.my_trades(symbol=symbols, limit=limit)
+                return pd.DataFrame(trades)
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error retrieving account trades: {e}")
             return None
 
     def get_deposit_history(self) -> Optional[pd.DataFrame]:
         """
-        Récupère l'historique des dépôts.
-
-        Returns
-        -------
-        pd.DataFrame ou None
-            DataFrame de l'historique des dépôts ou None en cas d'erreur.
+        Retrieve deposit history.
         """
         try:
-            return pd.DataFrame(self.client.get_deposit_history())
-        except BinanceAPIException as e:
-            logger.error(
-                f"Erreur lors de la récupération de l'historique des dépôts : {e}"
-            )
+            # binance-connector: deposit_history() returns a dict with "depositList"
+            resp = self.client.deposit_history()
+            if "depositList" in resp:
+                return pd.DataFrame(resp["depositList"])
+            else:
+                return pd.DataFrame()
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error retrieving deposit history: {e}")
             return None
 
     def get_withdraw_history(self) -> Optional[pd.DataFrame]:
         """
-        Récupère l'historique des retraits.
-
-        Returns
-        -------
-        pd.DataFrame ou None
-            DataFrame de l'historique des retraits ou None en cas d'erreur.
+        Retrieve withdrawal history.
         """
         try:
-            return pd.DataFrame(self.client.get_withdraw_history())
-        except BinanceAPIException as e:
-            logger.error(
-                f"Erreur lors de la récupération de l'historique des retraits : {e}"
-            )
+            # binance-connector: withdraw_history() returns a dict with "withdrawList"
+            resp = self.client.withdraw_history()
+            if "withdrawList" in resp:
+                return pd.DataFrame(resp["withdrawList"])
+            else:
+                return pd.DataFrame()
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error retrieving withdrawal history: {e}")
             return None
 
     def get_asset_detail(self) -> Optional[pd.DataFrame]:
         """
-        Récupère les détails des actifs (info sur dépôts, retraits, etc.).
-
-        Returns
-        -------
-        pd.DataFrame ou None
-            DataFrame des détails des actifs ou None en cas d'erreur.
+        Retrieve asset details (deposit/withdraw info, etc.).
         """
         try:
-            return pd.DataFrame(self.client.get_asset_details())
-        except BinanceAPIException as e:
-            logger.error(f"Erreur lors de la récupération des détails des actifs : {e}")
+            # binance-connector: asset_detail() returns a dict with "assetDetail"
+            resp = self.client.asset_detail()
+            if "assetDetail" in resp:
+                # resp["assetDetail"] is a dict keyed by asset name
+                # e.g. {"BTC": { ... }, "ETH": {...}}
+                details = []
+                for asset, detail in resp["assetDetail"].items():
+                    detail["asset"] = asset
+                    details.append(detail)
+                return pd.DataFrame(details)
+            else:
+                return pd.DataFrame()
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error retrieving asset detail: {e}")
             return None
 
     def get_trade_fee(
         self, symbols: Optional[Union[str, List[str]]] = None
     ) -> Optional[pd.DataFrame]:
         """
-        Récupère les frais de trading pour un ou plusieurs symboles.
-        Si aucun symbole n'est spécifié, récupère les frais pour tous.
-
-        Parameters
-        ----------
-        symbols : str ou list of str, optional
-            Le ou les symboles (ex: 'BTCUSDT'). Si None, récupère les frais pour tous les symboles.
-
-        Returns
-        -------
-        pd.DataFrame ou None
-            DataFrame des frais de trading ou None en cas d'erreur.
+        Retrieve trading fees for one or multiple symbols.
+        If no symbol is specified, retrieve fees for all symbols.
         """
         try:
             if symbols:
                 if isinstance(symbols, list):
                     data_frames = []
                     for symbol in symbols:
-                        fee = self.client.get_trade_fee(symbol=symbol)
-                        data_frames.append((symbol, pd.DataFrame([fee])))
-                    return pd.concat(
-                        [df for _, df in data_frames],
-                        keys=[sym for sym, _ in data_frames],
-                    )
+                        fee_data = self.client.trade_fee(symbol=symbol)
+                        # Usually returns something like {"tradeFee": [{...}]}
+                        if "tradeFee" in fee_data:
+                            df = pd.DataFrame(fee_data["tradeFee"])
+                            data_frames.append((symbol, df))
+                    if data_frames:
+                        return pd.concat(
+                            [df for _, df in data_frames],
+                            keys=[sym for sym, _ in data_frames]
+                        )
+                    else:
+                        return pd.DataFrame()
                 else:
-                    fee = self.client.get_trade_fee(symbol=symbols)
-                    return pd.DataFrame([fee])
+                    fee_data = self.client.trade_fee(symbol=symbols)
+                    if "tradeFee" in fee_data:
+                        return pd.DataFrame(fee_data["tradeFee"])
+                    else:
+                        return pd.DataFrame()
             else:
-                return pd.DataFrame(self.client.get_trade_fee())
-        except BinanceAPIException as e:
-            logger.error(f"Erreur lors de la récupération des frais de trading : {e}")
+                # Retrieve fees for all symbols
+                fee_data = self.client.trade_fee()
+                if "tradeFee" in fee_data:
+                    return pd.DataFrame(fee_data["tradeFee"])
+                else:
+                    return pd.DataFrame()
+
+        except (ClientError, ServerError) as e:
+            logger.error(f"Error retrieving trade fee: {e}")
             return None

@@ -3,16 +3,12 @@ import pandas as pd
 from typing import Union, List, Optional
 from datetime import datetime
 from dateutil import parser
+import os
+from configparser import ConfigParser
 
 # Binance Connector
-from binance.connector.spot import Spot as Client
+from binance.spot import Spot as Client
 from binance.error import ClientError, ServerError
-
-# If you still want to keep your old enums as constants, define them here:
-TIME_IN_FORCE_GTC = "GTC"
-ORDER_TYPE_MARKET = "MARKET"
-ORDER_TYPE_LIMIT = "LIMIT"
-ORDER_TYPE_STOP_LOSS_LIMIT = "STOP_LOSS_LIMIT"
 
 # Configure a simple logger
 logger = logging.getLogger(__name__)
@@ -24,6 +20,35 @@ stream_handler.setFormatter(
 logger.addHandler(stream_handler)
 
 
+def get_api_keys():
+    """
+    Récupère les clés API depuis un fichier config.ini situé dans le même dossier que ce script.
+
+    Returns:
+        tuple: (api_key, api_secret) si les clés sont trouvées, sinon None.
+    """
+    # Obtenez le chemin du fichier config.ini dans le même dossier que ce script
+    config_path = os.path.join(os.path.dirname(__file__), "config.ini")
+
+    # Vérifiez si le fichier existe
+    if not os.path.exists(config_path):
+        raise FileNotFoundError(
+            f"Le fichier config.ini est introuvable à l'emplacement : {config_path}"
+        )
+
+    # Lisez le fichier de configuration
+    config = ConfigParser()
+    config.read(config_path)
+
+    # Récupérez les clés
+    try:
+        api_key = config["keys"]["api_key"]
+        api_secret = config["keys"]["api_secret"]
+        return api_key, api_secret
+    except KeyError as e:
+        raise KeyError(f"Clé manquante dans le fichier config.ini : {e}")
+
+
 class BinanceTrader:
     """
     A class to interact with the Binance API (testnet or live),
@@ -31,19 +56,20 @@ class BinanceTrader:
     and historical data retrieval between two dates.
     """
 
-    def __init__(self, api_key: str, api_secret: str, testnet: bool = True):
+    def __init__(self, testnet: bool = True):
         self.testnet = testnet
+
+        api_key, api_secret = get_api_keys()
 
         if self.testnet:
             # Note: The testnet base_url for Spot is usually https://testnet.binance.vision
             self.client = Client(
-                base_url="https://testnet.binance.vision",
-                key=api_key,
-                secret=api_secret
+                api_key, api_secret, base_url="https://testnet.binance.vision"
             )
         else:
             # Production environment
-            self.client = Client(key=api_key, secret=api_secret)
+            self.client = Client(api_key, api_secret)
+        logger.info(self.client.account_status())
 
     def get_candlestick_data(
         self, symbols: Union[str, List[str]], interval: str, limit: int = 500
@@ -79,14 +105,11 @@ class BinanceTrader:
                     data_frames.append((symbol, df))
 
                 return pd.concat(
-                    [df for _, df in data_frames],
-                    keys=[sym for sym, _ in data_frames]
+                    [df for _, df in data_frames], keys=[sym for sym, _ in data_frames]
                 )
             else:
                 klines = self.client.klines(
-                    symbol=symbols,
-                    interval=interval,
-                    limit=limit
+                    symbol=symbols, interval=interval, limit=limit
                 )
                 df = pd.DataFrame(klines)
                 df.columns = [
@@ -270,8 +293,7 @@ class BinanceTrader:
                     df = pd.DataFrame(ob)
                     data_frames.append((symbol, df))
                 return pd.concat(
-                    [df for _, df in data_frames],
-                    keys=[sym for sym, _ in data_frames]
+                    [df for _, df in data_frames], keys=[sym for sym, _ in data_frames]
                 )
             else:
                 ob = self.client.depth(symbol=symbols, limit=limit)
@@ -294,8 +316,7 @@ class BinanceTrader:
                     df = pd.DataFrame(trades)
                     data_frames.append((symbol, df))
                 return pd.concat(
-                    [df for _, df in data_frames],
-                    keys=[sym for sym, _ in data_frames]
+                    [df for _, df in data_frames], keys=[sym for sym, _ in data_frames]
                 )
             else:
                 trades = self.client.trades(symbol=symbols, limit=limit)
@@ -318,8 +339,7 @@ class BinanceTrader:
                     df = pd.DataFrame(trades)
                     data_frames.append((symbol, df))
                 return pd.concat(
-                    [df for _, df in data_frames],
-                    keys=[sym for sym, _ in data_frames]
+                    [df for _, df in data_frames], keys=[sym for sym, _ in data_frames]
                 )
             else:
                 trades = self.client.historical_trades(symbol=symbols, limit=limit)
@@ -363,7 +383,7 @@ class BinanceTrader:
                 if data_frames:
                     return pd.concat(
                         [df for _, df in data_frames],
-                        keys=[sym for sym, _ in data_frames]
+                        keys=[sym for sym, _ in data_frames],
                     )
                 else:
                     return None
@@ -387,7 +407,7 @@ class BinanceTrader:
         quantity: float,
         price: Optional[float] = None,
         stop_price: Optional[float] = None,
-        time_in_force: str = TIME_IN_FORCE_GTC,
+        time_in_force: str = "GTC",
     ) -> Union[dict, None]:
         """
         Place an order (or multiple) with the specified parameters.
@@ -433,25 +453,13 @@ class BinanceTrader:
         """
         Internal method to place an order on a single symbol.
         """
-        # The binance-connector uses client.new_order(...) 
+        # The binance-connector uses client.new_order(...)
         # with arguments as strings in some cases
-        if order_type == ORDER_TYPE_MARKET:
+        if order_type == "MARKET":
             return self.client.new_order(
-                symbol=symbol,
-                side=side,
-                type=order_type,
-                quantity=quantity
+                symbol=symbol, side=side, type=order_type, quantity=quantity
             )
-        elif order_type == ORDER_TYPE_LIMIT:
-            return self.client.new_order(
-                symbol=symbol,
-                side=side,
-                type=order_type,
-                timeInForce=time_in_force,
-                quantity=quantity,
-                price=str(price)
-            )
-        elif order_type == ORDER_TYPE_STOP_LOSS_LIMIT:
+        elif order_type == "LIMIT":
             return self.client.new_order(
                 symbol=symbol,
                 side=side,
@@ -459,7 +467,16 @@ class BinanceTrader:
                 timeInForce=time_in_force,
                 quantity=quantity,
                 price=str(price),
-                stopPrice=str(stop_price)
+            )
+        elif order_type == "STOP_LOSS_LIMIT":
+            return self.client.new_order(
+                symbol=symbol,
+                side=side,
+                type=order_type,
+                timeInForce=time_in_force,
+                quantity=quantity,
+                price=str(price),
+                stopPrice=str(stop_price),
             )
         else:
             raise ValueError("Unsupported order type.")
@@ -478,8 +495,7 @@ class BinanceTrader:
                     df = pd.DataFrame([order_data])
                     data_frames.append((symbol, df))
                 return pd.concat(
-                    [df for _, df in data_frames], 
-                    keys=[sym for sym, _ in data_frames]
+                    [df for _, df in data_frames], keys=[sym for sym, _ in data_frames]
                 )
             else:
                 order_data = self.client.get_order(symbol=symbols, orderId=order_id)
@@ -498,12 +514,13 @@ class BinanceTrader:
             if isinstance(symbols, list):
                 data_frames = []
                 for symbol in symbols:
-                    cancel_resp = self.client.cancel_order(symbol=symbol, orderId=order_id)
+                    cancel_resp = self.client.cancel_order(
+                        symbol=symbol, orderId=order_id
+                    )
                     df = pd.DataFrame([cancel_resp])
                     data_frames.append((symbol, df))
                 return pd.concat(
-                    [df for _, df in data_frames], 
-                    keys=[sym for sym, _ in data_frames]
+                    [df for _, df in data_frames], keys=[sym for sym, _ in data_frames]
                 )
             else:
                 cancel_resp = self.client.cancel_order(symbol=symbols, orderId=order_id)
@@ -529,7 +546,7 @@ class BinanceTrader:
                         data_frames.append((symbol, df))
                     return pd.concat(
                         [df for _, df in data_frames],
-                        keys=[sym for sym, _ in data_frames]
+                        keys=[sym for sym, _ in data_frames],
                     )
                 else:
                     open_orders = self.client.get_open_orders(symbol=symbols)
@@ -572,8 +589,7 @@ class BinanceTrader:
                     df = pd.DataFrame(trades)
                     data_frames.append((symbol, df))
                 return pd.concat(
-                    [df for _, df in data_frames],
-                    keys=[sym for sym, _ in data_frames]
+                    [df for _, df in data_frames], keys=[sym for sym, _ in data_frames]
                 )
             else:
                 trades = self.client.my_trades(symbol=symbols, limit=limit)
@@ -653,7 +669,7 @@ class BinanceTrader:
                     if data_frames:
                         return pd.concat(
                             [df for _, df in data_frames],
-                            keys=[sym for sym, _ in data_frames]
+                            keys=[sym for sym, _ in data_frames],
                         )
                     else:
                         return pd.DataFrame()

@@ -1,6 +1,6 @@
 # Quant project
 
-Here is a quant project I intend to develop, building me own framework from analysis to trading. I will start by using Binance as my broker and data collector
+Here is a quant project I intend to develop, building my own framework from analysis to trading. I will start by using Binance as my broker and data collector
 
 ## Advancements :
 

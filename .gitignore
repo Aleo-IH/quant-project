@@ -11,3 +11,4 @@ wheels/
 .env
 .ruff_cache
 *.ini
+*.pkl

@@ -141,3 +141,80 @@ def plot_cross_validation_metrics(cv_results):
 
     plt.tight_layout()
     plt.show()
+
+
+def plot_bin_precision(cv_result, n_bins=5):
+    """
+    Plot and analyze the precision of predictions for each bin across different target columns.
+    
+    Args:
+        cv_result (list): List of tuples containing (y_test, y_pred) for each CV fold
+        n_bins (int): Number of bins used in the discretization (default=5)
+    """
+    import numpy as np
+    import matplotlib.pyplot as plt
+
+    # Calculate precision (when model predicts a bin, how often it's correct)
+    bin_precision = {bin_num: {} for bin_num in range(n_bins)}
+
+    # Initialize dictionaries for each column
+    for y_test, _ in cv_result:
+        for col in y_test.columns:
+            for bin_num in range(n_bins):
+                bin_precision[bin_num][col] = []
+
+    # Calculate precision per column and bin
+    for y_test, y_pred in cv_result:
+        for col in y_test.columns:
+            for bin_num in range(n_bins):
+                # Get indices where model predicted this bin
+                pred_mask = (y_pred[col] == bin_num)
+                if pred_mask.sum() > 0:  # Only calculate if model made predictions for this bin
+                    # Calculate precision: true positives / predicted positives
+                    precision = np.mean(y_test[col][pred_mask] == bin_num)
+                    bin_precision[bin_num][col].append(precision)
+                else:
+                    bin_precision[bin_num][col].append(0)  # No predictions made for this bin
+
+    # Create plot
+    plt.figure(figsize=(12, 6))
+
+    # Plot settings
+    width = 0.15
+    x = np.arange(len(bin_precision[0].keys()))
+
+    # Colors for each bin
+    colors = ['red', 'orange', 'gray', 'lightgreen', 'green']
+    labels = ['Bin 0 (Most negative)', 'Bin 1', 'Bin 2', 'Bin 3', 'Bin 4 (Most positive)']
+
+    # Create bars for each bin
+    for i in range(n_bins):
+        offset = width * (i - 2)  # Center the groups of bars
+        plt.bar(x + offset, 
+                [np.mean(bin_precision[i][col]) for col in bin_precision[i].keys()],
+                width, 
+                label=labels[i],
+                yerr=[np.std(bin_precision[i][col]) for col in bin_precision[i].keys()],
+                color=colors[i],
+                alpha=0.7)
+
+    # Customize plot
+    plt.xlabel('Target Columns')
+    plt.ylabel('Precision')
+    plt.title('Precision by Predicted Bin (When model predicts a bin, how often is it correct?)')
+    plt.xticks(x, bin_precision[0].keys(), rotation=45)
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+
+    # Show plot
+    plt.show()
+
+    # Print detailed results
+    print("\nDetailed precision for predicted bins by column:")
+    for col in bin_precision[0].keys():
+        print(f"\n{col}:")
+        for bin_num in range(n_bins):
+            mean_precision = np.mean(bin_precision[bin_num][col])
+            std_precision = np.std(bin_precision[bin_num][col])
+            print(f"When predicted Bin {bin_num} - Precision: {mean_precision:.4f} ± {std_precision:.4f}")

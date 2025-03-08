@@ -19,25 +19,25 @@ class CryptoTradingEnv(gym.Env):
     Paramètres
     ----------
     df : pd.DataFrame
-        DataFrame contenant les données de marché (historique ou en direct). 
+        DataFrame contenant les données de marché (historique ou en direct).
         Les colonnes doivent être numériques.
     column_names : list
-        Liste des noms de colonnes à utiliser dans l'observation. Toutes doivent 
+        Liste des noms de colonnes à utiliser dans l'observation. Toutes doivent
         être de type numérique (float, int).
     n_positions : int
-        Nombre de positions discrètes possibles (p. ex. 20 : 0.0, 0.05, 0.1, ..., 1.0 
+        Nombre de positions discrètes possibles (p. ex. 20 : 0.0, 0.05, 0.1, ..., 1.0
         si on veut coder une répartition de 0% à 100% en crypto).
     initial_balance : float
         Balance initiale du compte de trading pour calculer le PnL.
     max_steps : int
-        Nombre maximum de pas de temps avant que l'épisode se termine 
+        Nombre maximum de pas de temps avant que l'épisode se termine
         (peut être len(df) ou un nombre inférieur).
     sharpe_length : int
         Période de calcul du ratio de Sharpe (ex : 30 jours).
     transaction_fee : float
         Frais de transaction en fraction du montant tradé (ex : 0.0001 = 0.01%).
     trade_threshold : float
-        Seuil minimal en dollars du montant à échanger pour exécuter réellement 
+        Seuil minimal en dollars du montant à échanger pour exécuter réellement
         la transaction (sinon on ignore le trade).
     """
 
@@ -71,7 +71,7 @@ class CryptoTradingEnv(gym.Env):
         # Espace d'actions : un entier [0..n_positions-1]
         self.action_space = spaces.Discrete(self.n_positions)
 
-        # Espace d'observation : 
+        # Espace d'observation :
         #  -> len(self.column_names) colonnes de marché
         #  -> + 1 pour la balance ou le total
         #  -> + 1 pour la répartition en BTC
@@ -128,25 +128,27 @@ class CryptoTradingEnv(gym.Env):
 
     def _get_observation(self):
         """
-        Récupère l'observation courante depuis le DataFrame + 
+        Récupère l'observation courante depuis le DataFrame +
         la balance et la répartition courante en BTC.
         """
         if self.terminated or self.truncated:
-            # Si l'épisode est fini, on peut retourner un vecteur vide 
+            # Si l'épisode est fini, on peut retourner un vecteur vide
             # ou répéter la dernière observation.
             obs = np.zeros((len(self.column_names) + 2,), dtype=np.float32)
             return obs
 
         # Données marché (colonnes numériques)
-        obs_df = self.df[self.column_names].iloc[self.current_step].values.astype(np.float32)
+        obs_df = (
+            self.df[self.column_names].iloc[self.current_step].values.astype(np.float32)
+        )
 
         # On ajoute la balance (ou sum(position_quote)) et la proportion BTC
         obs_bot = np.array(
             [
-                self.balance,          # Montant total
-                self.repartition[0],   # Part en BTC (0..1)
+                self.balance,  # Montant total
+                self.repartition[0],  # Part en BTC (0..1)
             ],
-            dtype=np.float32
+            dtype=np.float32,
         )
 
         obs = np.concatenate([obs_df, obs_bot])
@@ -207,13 +209,13 @@ class CryptoTradingEnv(gym.Env):
                 btc_to_buy = trade_value / current_price
                 # Mise à jour quantités
                 self.positions_base[0] += btc_to_buy
-                self.positions_base[1] -= (trade_value + cost)  # on retire les USDT
+                self.positions_base[1] -= trade_value + cost  # on retire les USDT
             else:
                 # On VEND du BTC
                 btc_to_sell = abs(trade_value) / current_price
                 self.positions_base[0] -= btc_to_sell
                 # On récupère du USDT, moins le coût
-                self.positions_base[1] += (abs(trade_value) - cost)
+                self.positions_base[1] += abs(trade_value) - cost
 
             # Après le trade, on met à jour quote, repartition, balance
             self._update_position_quote()

@@ -22,19 +22,13 @@ logger.addHandler(stream_handler)
 
 
 def get_api_keys():
-    """
-    Récupère les clés API depuis un fichier config.ini situé dans le même dossier que ce script.
-
-    Returns:
-        tuple: (api_key, api_secret) si les clés sont trouvées, sinon None.
-    """
     # Obtenez le chemin du fichier config.ini dans le même dossier que ce script
     config_path = os.path.join(os.path.dirname(__file__), "config.ini")
 
     # Vérifiez si le fichier existe
     if not os.path.exists(config_path):
         raise FileNotFoundError(
-            f"Le fichier config.ini est introuvable à l'emplacement : {config_path}"
+            f"config.ini file not found at this path : {config_path}"
         )
 
     # Lisez le fichier de configuration
@@ -47,7 +41,7 @@ def get_api_keys():
         api_secret = config["keys"]["api_secret"]
         return api_key, api_secret
     except KeyError as e:
-        raise KeyError(f"Clé manquante dans le fichier config.ini : {e}")
+        raise KeyError(f"Missing key in config.ini : {e}")
 
 
 class BinanceTrader:

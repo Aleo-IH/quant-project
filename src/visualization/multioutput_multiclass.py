@@ -44,7 +44,6 @@ def plot_distributions(y_true, y_pred):
         axes[-1].set_visible(False)
 
     plt.tight_layout()
-    plt.show()
 
 
 def plot_confusion_matrices(y_true, y_pred):
@@ -72,7 +71,6 @@ def plot_confusion_matrices(y_true, y_pred):
         axes[-1].set_visible(False)
 
     plt.tight_layout()
-    plt.show()
 
 
 def classif_report(y_true, y_pred):
@@ -160,7 +158,6 @@ def plot_cross_validation_metrics(cv_results):
     plt.legend()
 
     plt.tight_layout()
-    plt.show()
 
 
 def plot_bin_precision(cv_result, n_bins=5):
@@ -242,7 +239,6 @@ def plot_bin_precision(cv_result, n_bins=5):
     plt.tight_layout()
 
     # Show plot
-    plt.show()
 
     # Print detailed results
     print("\nDetailed precision for predicted bins by column:")

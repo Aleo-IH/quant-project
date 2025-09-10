@@ -1,6 +1,7 @@
 import pandas as pd
 from src.binance.binance_trader import BinanceTrader
 
+
 def test_account_and_misc_endpoints():
     t = BinanceTrader(testnet=True)
     info = t.get_account_info()

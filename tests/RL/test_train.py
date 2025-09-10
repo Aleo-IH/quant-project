@@ -1,9 +1,6 @@
 from pathlib import Path
-import os
 import types
-import numpy as np
-import pandas as pd
-import pytest
+
 
 def test_train_ppo_happy_path(monkeypatch, tmp_pkls_dir: Path):
     # Import module under test
@@ -21,7 +18,13 @@ def test_train_ppo_happy_path(monkeypatch, tmp_pkls_dir: Path):
             calls.init_kwargs = kwargs
             self.kwargs = kwargs
 
-        def learn(self, total_timesteps: int, progress_bar: bool = False, tb_log_name: str | None = None, callback=None):
+        def learn(
+            self,
+            total_timesteps: int,
+            progress_bar: bool = False,
+            tb_log_name: str | None = None,
+            callback=None,
+        ):
             calls.learned = True
             calls.learned_timesteps = int(total_timesteps)
             return self

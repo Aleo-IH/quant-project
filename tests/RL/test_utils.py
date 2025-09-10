@@ -1,6 +1,4 @@
-import os
 from pathlib import Path
-import numpy as np
 import pandas as pd
 
 from models.RL import utils
@@ -41,7 +39,9 @@ class DummyModel:
 
 def test_showcase_model_with_dummy(simple_ohlcv_df: pd.DataFrame):
     model = DummyModel(action=2)
-    res, steps_info, last = utils.showcase_model(model, simple_ohlcv_df, window=8, max_steps=25)
+    res, steps_info, last = utils.showcase_model(
+        model, simple_ohlcv_df, window=8, max_steps=25
+    )
     assert isinstance(res, dict) and "total_reward" in res
     assert isinstance(steps_info, dict) and "steps" in steps_info
     assert steps_info["steps"] > 0

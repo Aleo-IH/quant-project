@@ -35,7 +35,9 @@ def _technical_strategy() -> ta.Strategy:
     return TechnicalStrategy()
 
 
-def load_and_prepare_data(params: dict, target_threshold: float = 0.0005) -> pd.DataFrame:
+def load_and_prepare_data(
+    params: dict, target_threshold: float = 0.0005
+) -> pd.DataFrame:
     """Load price data, drop unused cols, add TA, and base target."""
     df = pd.read_pickle("./src/data/" + "_".join(params.values()) + ".pkl")
 
@@ -124,7 +126,9 @@ def cross_val_meta_probabilities(
 ):
     """Run time series CV, return concatenated test folds and accuracy list."""
     console = Console()
-    console.print("[bold green]Starting TimeSeries Cross-Validation Training...[/bold green]")
+    console.print(
+        "[bold green]Starting TimeSeries Cross-Validation Training...[/bold green]"
+    )
 
     # Retrain weekly: 1 week of minutes ~ 10080
     nb_weeks = max(2, len(df_na) // 10080)
@@ -136,7 +140,9 @@ def cross_val_meta_probabilities(
     cv_accuracies = []
     test_dfs = []
 
-    for train_idx, test_idx in tqdm(tscv.split(X), total=tscv.get_n_splits(), desc="CV Folds"):
+    for train_idx, test_idx in tqdm(
+        tscv.split(X), total=tscv.get_n_splits(), desc="CV Folds"
+    ):
         df_test, acc = train_meta_on_fold(
             rf_model, df_na, X, y, train_idx, test_idx, holding_period
         )
@@ -145,11 +151,13 @@ def cross_val_meta_probabilities(
         test_dfs.append(df_test)
 
     avg_acc = float(np.mean(cv_accuracies)) if cv_accuracies else float("nan")
-    console.print(f"[bold blue]Average CV Accuracy: {avg_acc*100:.2f}%[/bold blue]")
+    console.print(f"[bold blue]Average CV Accuracy: {avg_acc * 100:.2f}%[/bold blue]")
     return pd.concat(test_dfs).sort_index(), cv_accuracies
 
 
-def compute_signals(df_out: pd.DataFrame, signal_threshold: float, holding_period: int) -> pd.DataFrame:
+def compute_signals(
+    df_out: pd.DataFrame, signal_threshold: float, holding_period: int
+) -> pd.DataFrame:
     """Create primary and meta signals and associated returns in-place."""
     df_out["Primary_Signal"] = (df_out["Primary_Prob"] > signal_threshold).astype(int)
     df_out["Primary_Strategy_Log_Return"] = df_out["Primary_Signal"] * np.log(
@@ -166,7 +174,9 @@ def compute_signals(df_out: pd.DataFrame, signal_threshold: float, holding_perio
         df_out["Meta_Signal"] = 0
         df_out["Strategy_Log_Return"] = 0.0
 
-    df_out["Log_Return"] = np.log(df_out["Close"].shift(-holding_period) / df_out["Close"])
+    df_out["Log_Return"] = np.log(
+        df_out["Close"].shift(-holding_period) / df_out["Close"]
+    )
     df_out["Meta_Target"] = (
         df_out["Close"].shift(-holding_period) / df_out["Close"] > 1.001
     ).astype(int)
@@ -381,9 +391,7 @@ def main():
     # Summary
     print("=== Strategy Performance ===")
     print(f"Cumulative Return (Meta Strategy): {m['cumulative_return_meta']:.4f}")
-    print(
-        f"Cumulative Return (Primary Strategy): {m['cumulative_return_primary']:.4f}"
-    )
+    print(f"Cumulative Return (Primary Strategy): {m['cumulative_return_primary']:.4f}")
     print(f"Sharpe Ratio (Meta Strategy): {m['sharpe_meta']:.4f}")
     print(f"Sharpe Ratio (Primary Strategy): {m['sharpe_primary']:.4f}")
     print("\n=== Classification Metrics ===")
@@ -398,4 +406,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

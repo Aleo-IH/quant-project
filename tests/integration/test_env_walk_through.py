@@ -1,9 +1,11 @@
-import numpy as np
 from src.backtester.crypto_broker_env import CryptoTradingEnv
+
 
 def test_env_walk_through(trending_close_df):
     cols = ["ATRr_14", "Number of Trades", "volume"]
-    env = CryptoTradingEnv(trending_close_df, cols, n_positions=3, transaction_fee=0.0005)
+    env = CryptoTradingEnv(
+        trending_close_df, cols, n_positions=3, transaction_fee=0.0005
+    )
     obs, _ = env.reset()
 
     total_r = 0.0

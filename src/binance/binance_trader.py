@@ -156,8 +156,7 @@ class BinanceTrader:
                 df = df.set_index("Open Time")
                 df = df.astype(float)
                 df.name = (
-                    f"{symbols} ; {interval} tf ; "
-                    f"{df.index.min()} to {df.index.max()}"
+                    f"{symbols} ; {interval} tf ; {df.index.min()} to {df.index.max()}"
                 )
                 return df
         except (ClientError, ServerError) as e:

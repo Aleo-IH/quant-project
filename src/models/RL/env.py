@@ -6,6 +6,7 @@ import gymnasium as gym
 from gymnasium import spaces
 from typing import Optional, Tuple
 
+
 class TradingEnv(gym.Env):
     """Fast single-asset trading environment with discrete positions.
 
@@ -57,7 +58,6 @@ class TradingEnv(gym.Env):
         low = self._df["low"].to_numpy()
         vol = self._df["volume"].to_numpy()
 
-
         # Align features with time index starting at 1 due to differencing
         self._features = self.get_features(close, open_, high, low, vol)
         self._close = close[1:]
@@ -68,7 +68,9 @@ class TradingEnv(gym.Env):
         self.render_mode: str | None = render_mode
 
         # Spaces
-        self.action_space = spaces.Discrete(3)  # 0: short (-1), 1: flat (0), 2: long (+1)
+        self.action_space = spaces.Discrete(
+            3
+        )  # 0: short (-1), 1: flat (0), 2: long (+1)
         self.observation_space = spaces.Box(
             low=-np.inf,
             high=np.inf,
@@ -86,7 +88,9 @@ class TradingEnv(gym.Env):
         self._trades: int = 0
         self._last_reward: float = 0.0
         self._last_action: int = 1  # encoded action (0,1,2). Default to flat
-        self._cum_log_ret: float = 0.0  # cumulative position-weighted log return (unscaled)
+        self._cum_log_ret: float = (
+            0.0  # cumulative position-weighted log return (unscaled)
+        )
         self._realized_log_ret: float = 0.0  # realized portion when closing positions
         self._entry_price: Optional[float] = None
         self._render_header_printed: bool = False
@@ -105,12 +109,14 @@ class TradingEnv(gym.Env):
         self._stat_text = None
         self._pos_series: Optional[np.ndarray] = None  # per-step position history
         self._equity_value: float = 100.0
-        self._equity_series: Optional[np.ndarray] = None  # per-step equity (gains) history
+        self._equity_series: Optional[np.ndarray] = (
+            None  # per-step equity (gains) history
+        )
         self._trade_long_idx: list[int] = []
         self._trade_short_idx: list[int] = []
         self._trade_close_idx: list[int] = []
         self._last_flat_marker_idx: Optional[int] = None
-        self._render_tail: int = 600 
+        self._render_tail: int = 600
 
     def get_features(self, close, open_, high, low, vol):
         log_ret = np.log((close[1:]) / (close[:-1]))
@@ -118,19 +124,25 @@ class TradingEnv(gym.Env):
         oc_change = (close[1:] - open_[1:]) / (open_[1:])
         vol_chg = np.log((vol[1:] + 1.0) / (vol[:-1] + 1.0))
 
-        features = np.stack([log_ret, hl_range, oc_change, vol_chg], axis=1).astype(np.float32)
+        features = np.stack([log_ret, hl_range, oc_change, vol_chg], axis=1).astype(
+            np.float32
+        )
         return features
 
     def _obs(self) -> np.ndarray:
         # Provide last `window` rows. If at beginning, pad from start.
         start = max(0, self._t - self._window)
-        obs = self._features[start:self._t]
+        obs = self._features[start : self._t]
         if obs.shape[0] < self._window:
-            pad = np.zeros((self._window - obs.shape[0], self._features.shape[1]), dtype=np.float32)
+            pad = np.zeros(
+                (self._window - obs.shape[0], self._features.shape[1]), dtype=np.float32
+            )
             obs = np.vstack([pad, obs])
         return obs.astype(np.float32, copy=False)
 
-    def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None) -> Tuple[np.ndarray, dict]:
+    def reset(
+        self, *, seed: Optional[int] = None, options: Optional[dict] = None
+    ) -> Tuple[np.ndarray, dict]:
         super().reset(seed=seed)
         # Start after initial window to avoid excessive padding
         self._t = self._window
@@ -174,13 +186,19 @@ class TradingEnv(gym.Env):
         self._last_action = action
 
         # Handle entry/exit bookkeeping at the current market price
-        cur_price = float(self._close[self._t - 1]) if self._t - 1 < len(self._close) else float("nan")
+        cur_price = (
+            float(self._close[self._t - 1])
+            if self._t - 1 < len(self._close)
+            else float("nan")
+        )
         if new_pos != prev_pos:
             self._trades += 1
             # If we are closing or flipping, realize PnL on the previous leg
             if prev_pos != 0 and self._entry_price not in (None, 0.0):
                 # Use log return for realization robustness
-                self._realized_log_ret += prev_pos * float(np.log((cur_price + 1e-12) / (self._entry_price + 1e-12)))
+                self._realized_log_ret += prev_pos * float(
+                    np.log((cur_price + 1e-12) / (self._entry_price + 1e-12))
+                )
             # Set new entry price if we are opening a position
             self._entry_price = cur_price if new_pos != 0 else None
             # Record trade markers (at index t-1)
@@ -194,23 +212,34 @@ class TradingEnv(gym.Env):
             elif prev_pos == 0 and new_pos != 0:
                 # Leaving flat: reset flat marker tracker
                 self._last_flat_marker_idx = None
-                (self._trade_long_idx if new_pos > 0 else self._trade_short_idx).append(idx)
-            elif prev_pos != 0 and new_pos != 0 and np.sign(prev_pos) != np.sign(new_pos):
+                (self._trade_long_idx if new_pos > 0 else self._trade_short_idx).append(
+                    idx
+                )
+            elif (
+                prev_pos != 0 and new_pos != 0 and np.sign(prev_pos) != np.sign(new_pos)
+            ):
                 # flip: close then open
                 # Do not mark a close-circle on flips to avoid repeated circles; only mark new open
-                (self._trade_long_idx if new_pos > 0 else self._trade_short_idx).append(idx)
+                (self._trade_long_idx if new_pos > 0 else self._trade_short_idx).append(
+                    idx
+                )
 
         # Log position at this time index for plotting history
         self._pos = new_pos
-        if self._t - 1 < (self._pos_series.shape[0] if self._pos_series is not None else 0):
+        if self._t - 1 < (
+            self._pos_series.shape[0] if self._pos_series is not None else 0
+        ):
             self._pos_series[self._t - 1] = new_pos
         # Update gains/equity curve: multiply by exp(net_log_return)
-        net_log = (new_pos * ret - trans_cost)
+        net_log = new_pos * ret - trans_cost
         try:
             self._equity_value *= float(np.exp(net_log))
         except Exception:
             pass
-        if self._equity_series is not None and self._t - 1 < self._equity_series.shape[0]:
+        if (
+            self._equity_series is not None
+            and self._t - 1 < self._equity_series.shape[0]
+        ):
             self._equity_series[self._t - 1] = self._equity_value
         self._t += 1
 
@@ -244,26 +273,37 @@ class TradingEnv(gym.Env):
             import matplotlib.pyplot as plt
         except Exception:
             # Fallback to text if matplotlib not available
-            print({
-                "t": self._t,
-                "price": float(self._close[self._t - 1]),
-                "pos": int(self._pos),
-                "reward": float(self._last_reward),
-                "cum_reward": float(self._cum_reward),
-                "cum_fee": float(self._cum_fee),
-                "trades": int(self._trades),
-            })
+            print(
+                {
+                    "t": self._t,
+                    "price": float(self._close[self._t - 1]),
+                    "pos": int(self._pos),
+                    "reward": float(self._last_reward),
+                    "cum_reward": float(self._cum_reward),
+                    "cum_fee": float(self._cum_fee),
+                    "trades": int(self._trades),
+                }
+            )
             return
 
         # Lazy init the figure and artists
-        if (not self._render_initialized) or (self._fig is None) or (self._ax_gain is None):
+        if (
+            (not self._render_initialized)
+            or (self._fig is None)
+            or (self._ax_gain is None)
+        ):
             import matplotlib
+
             backend = str(matplotlib.get_backend()).lower()
             inline_backend = "inline" in backend or "nbagg" in backend
             if not inline_backend:
                 plt.ion()
-            self._fig, (self._ax_price, self._ax_pos, self._ax_gain) = plt.subplots(3, 1, sharex=True, figsize=(11, 9), dpi=100)
-            self._fig.canvas.manager.set_window_title("TradingEnv - Live Render") if hasattr(self._fig.canvas.manager, 'set_window_title') else None
+            self._fig, (self._ax_price, self._ax_pos, self._ax_gain) = plt.subplots(
+                3, 1, sharex=True, figsize=(11, 9), dpi=100
+            )
+            self._fig.canvas.manager.set_window_title(
+                "TradingEnv - Live Render"
+            ) if hasattr(self._fig.canvas.manager, "set_window_title") else None
             self._ax_price.set_ylabel("Price")
             self._ax_pos.set_ylabel("Position")
             self._ax_pos.set_xlabel("t")
@@ -271,18 +311,43 @@ class TradingEnv(gym.Env):
             self._ax_pos.set_yticks([-1, 0, 1])
             self._ax_gain.set_ylabel("Equity (Gains)")
             # Lines
-            self._ln_price, = self._ax_price.plot([], [], color="#1f77b4", lw=1.25, label="Close")
-            self._ln_pos, = self._ax_pos.step([], [], color="#2ca02c", lw=1.25, where="post", label="Pos")
-            self._ln_gain, = self._ax_gain.plot([], [], color="#ff7f0e", lw=1.25, label="Equity")
+            (self._ln_price,) = self._ax_price.plot(
+                [], [], color="#1f77b4", lw=1.25, label="Close"
+            )
+            (self._ln_pos,) = self._ax_pos.step(
+                [], [], color="#2ca02c", lw=1.25, where="post", label="Pos"
+            )
+            (self._ln_gain,) = self._ax_gain.plot(
+                [], [], color="#ff7f0e", lw=1.25, label="Equity"
+            )
             # Trades scatters
-            self._sc_long = self._ax_price.scatter([], [], marker="^", c="#2ca02c", s=35, label="Long open")
-            self._sc_short = self._ax_price.scatter([], [], marker="v", c="#d62728", s=35, label="Short open")
-            self._sc_close = self._ax_price.scatter([], [], marker="o", facecolors="none", edgecolors="#1f77b4", s=35, label="Close")
+            self._sc_long = self._ax_price.scatter(
+                [], [], marker="^", c="#2ca02c", s=35, label="Long open"
+            )
+            self._sc_short = self._ax_price.scatter(
+                [], [], marker="v", c="#d62728", s=35, label="Short open"
+            )
+            self._sc_close = self._ax_price.scatter(
+                [],
+                [],
+                marker="o",
+                facecolors="none",
+                edgecolors="#1f77b4",
+                s=35,
+                label="Close",
+            )
             self._ax_price.legend(loc="upper left", fontsize=8, frameon=False)
             # Stats text on price axes
             self._stat_text = self._ax_price.text(
-                1.02, 0.98, "", transform=self._ax_price.transAxes, va="top", ha="left",
-                fontsize=9, family="monospace", bbox=dict(boxstyle="round", facecolor="white", alpha=0.8, lw=0.5)
+                1.02,
+                0.98,
+                "",
+                transform=self._ax_price.transAxes,
+                va="top",
+                ha="left",
+                fontsize=9,
+                family="monospace",
+                bbox=dict(boxstyle="round", facecolor="white", alpha=0.8, lw=0.5),
             )
             self._fig.tight_layout()
             self._render_initialized = True
@@ -305,13 +370,17 @@ class TradingEnv(gym.Env):
         else:
             x_pos = x
             y_pos_step = y_pos
-        self._ln_pos.set_data(np.asarray(x_pos, dtype=float), np.asarray(y_pos_step, dtype=float))
+        self._ln_pos.set_data(
+            np.asarray(x_pos, dtype=float), np.asarray(y_pos_step, dtype=float)
+        )
 
         # Equity/gains series
         if self._equity_series is None or len(self._equity_series) != len(self._close):
             self._equity_series = np.full(self._close.shape, np.nan, dtype=float)
         y_gain = self._equity_series[left:t]
-        self._ln_gain.set_data(np.asarray(x, dtype=float), np.asarray(y_gain, dtype=float))
+        self._ln_gain.set_data(
+            np.asarray(x, dtype=float), np.asarray(y_gain, dtype=float)
+        )
 
         # Update trades
         def _scatter_update(sc, idxs, color=None):
@@ -371,12 +440,18 @@ class TradingEnv(gym.Env):
         # Stats panel content
         price = float(self._close[self._t - 1])
         pos = int(self._pos)
-        ret = float(self._features[self._t - 1, 0]) if self._t - 1 < len(self._features) else 0.0
+        ret = (
+            float(self._features[self._t - 1, 0])
+            if self._t - 1 < len(self._features)
+            else 0.0
+        )
         equity = float(self._equity_value)
         cum_pct = (equity / 100.0 - 1.0) * 100.0
         realized_pct = (float(np.exp(self._realized_log_ret)) - 1.0) * 100.0
         if pos != 0 and self._entry_price not in (None, 0.0):
-            unreal_log = pos * float(np.log((price + 1e-12) / (self._entry_price + 1e-12)))
+            unreal_log = pos * float(
+                np.log((price + 1e-12) / (self._entry_price + 1e-12))
+            )
             unreal_pct = (float(np.exp(unreal_log)) - 1.0) * 100.0
         else:
             unreal_pct = 0.0
@@ -397,6 +472,7 @@ class TradingEnv(gym.Env):
 
         # Draw and display depending on backend (GUI vs notebook inline)
         import matplotlib
+
         backend = str(matplotlib.get_backend()).lower()
         inline_backend = "inline" in backend or "nbagg" in backend
 
@@ -410,12 +486,14 @@ class TradingEnv(gym.Env):
             # Jupyter inline update: clear output and display the updated figure
             try:
                 from IPython.display import display, clear_output
+
                 clear_output(wait=True)
                 display(self._fig)
             except Exception:
                 pass
             try:
                 import matplotlib.pyplot as plt  # noqa: F401
+
                 plt.pause(0.001)
             except Exception:
                 pass

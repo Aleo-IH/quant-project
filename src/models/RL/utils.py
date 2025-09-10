@@ -17,7 +17,8 @@ except Exception:  # pragma: no cover
     from env import TradingEnv
 import os
 import stable_baselines3 as sb3
-from typing import Type
+
+
 def load_pkls(data_path: str | os.PathLike) -> pd.DataFrame:
     """Load one or many .pkl files into a single chronological DataFrame.
 
@@ -124,13 +125,9 @@ def showcase_model(
 
     return {"total_reward": total_reward}, {"steps": steps}, {"last_info": last_info}
 
-def load_model(model_path : str):
+
+def load_model(model_path: str):
     return sb3.PPO.load(model_path)
 
-__all__ = [
-    "load_pkls",
-    "make_env_from_df",
-    "showcase_model",
-    "load_model"
 
-]
+__all__ = ["load_pkls", "make_env_from_df", "showcase_model", "load_model"]

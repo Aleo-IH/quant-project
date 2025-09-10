@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-import pytest
 
 from models.RL.env import TradingEnv
 
@@ -48,7 +47,7 @@ def test_env_step_reward_and_fee(simple_ohlcv_df: pd.DataFrame):
     # Reconstruct log return as in env.get_features
     close = df["close"].to_numpy()
     expected_ret = float(np.log(close[t0 + 1] / close[t0]))
-    expected_reward1 = (1 * expected_ret - fee)
+    expected_reward1 = 1 * expected_ret - fee
     assert np.isclose(reward1, expected_reward1, atol=1e-8)
     assert info1["position"] == 1
 
@@ -56,14 +55,14 @@ def test_env_step_reward_and_fee(simple_ohlcv_df: pd.DataFrame):
     obs, reward2, done, trunc, info2 = env.step(2)
     t1 = window  # now features[t1, 0]
     expected_ret2 = float(np.log(close[t1 + 1] / close[t1]))
-    expected_reward2 = (1 * expected_ret2 - 0.0)
+    expected_reward2 = 1 * expected_ret2 - 0.0
     assert np.isclose(reward2, expected_reward2, atol=1e-8)
     assert info2["position"] == 1
 
     # Go flat (action=1 => pos=0), incur fee once
     obs, reward3, done, trunc, info3 = env.step(1)
     expected_ret3 = float(np.log(close[t1 + 2] / close[t1 + 1]))
-    expected_reward3 = (0 * expected_ret3 - fee)
+    expected_reward3 = 0 * expected_ret3 - fee
     assert np.isclose(reward3, expected_reward3, atol=1e-8)
     assert info3["position"] == 0
     assert info3["trades"] >= 2  # at least two changes happened

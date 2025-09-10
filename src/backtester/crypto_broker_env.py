@@ -308,8 +308,8 @@ class CryptoTradingEnv(gym.Env):
         print(
             f"Step: {self.current_step}, "
             f"Balance: {self.balance:.2f}, "
-            f"BTC part: {self.repartition[0]*100:.2f}%, "
-            f"USDT part: {self.repartition[1]*100:.2f}%, "
+            f"BTC part: {self.repartition[0] * 100:.2f}%, "
+            f"USDT part: {self.repartition[1] * 100:.2f}%, "
             f"Sharpe: {self.rolling_sharpe_ratio:.4f}"
         )
 

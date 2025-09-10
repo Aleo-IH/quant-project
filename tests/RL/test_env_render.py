@@ -86,7 +86,9 @@ def test_render_with_minimal_matplotlib_stub(monkeypatch):
             return (types.SimpleNamespace(set_data=lambda *_: None),)
 
         def scatter(self, *_, **__):
-            return types.SimpleNamespace(set_offsets=lambda *_: None, set_color=lambda *_: None)
+            return types.SimpleNamespace(
+                set_offsets=lambda *_: None, set_color=lambda *_: None
+            )
 
         def set_xlim(self, *_):
             pass
@@ -113,7 +115,12 @@ def test_render_with_minimal_matplotlib_stub(monkeypatch):
 
     # matplotlib module stub
     matplotlib = types.SimpleNamespace(get_backend=lambda: "qt5agg")
-    plt = types.SimpleNamespace(subplots=subplots, ion=lambda: None, show=lambda **_: None, pause=lambda *_: None)
+    plt = types.SimpleNamespace(
+        subplots=subplots,
+        ion=lambda: None,
+        show=lambda **_: None,
+        pause=lambda *_: None,
+    )
 
     monkeypatch.setitem(sys.modules, "matplotlib", matplotlib)
     monkeypatch.setitem(sys.modules, "matplotlib.pyplot", plt)

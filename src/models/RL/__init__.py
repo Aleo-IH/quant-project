@@ -8,6 +8,5 @@ __all__ = [
     "TensorBoardServer",
     "make_env_from_df",
     "showcase_model",
-    "load_model"
+    "load_model",
 ]
-

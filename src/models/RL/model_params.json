@@ -1,0 +1,13 @@
+{
+    "policy" : "MlpPolicy",
+    "verbose" : 0,
+    "learning_rate" : 3e-4,
+    "n_steps" : 2048,
+    "batch_size" : 256,
+    "n_epochs" : 4,
+    "gamma" : 0.99,
+    "gae_lambda" : 0.95,
+    "ent_coef" : 0.0,
+    "clip_range" : 0.2,
+    "device" : "auto"
+}
